@@ -41,7 +41,8 @@ Claude Channels (plugin:telegram)
     │
     └── KYA Registry (TON Testnet)
         ├── AgentRegistry.fc     — TEP-62 NFT Collection
-        └── AgentSBT.fc          — TEP-85 Soul Bound Token
+        ├── AgentSBT.fc          — TEP-85 Soul Bound Token
+        └── KyaGated.fc          — Access-controlled vault (KYA-verified only)
 ```
 
 ## Components
@@ -52,6 +53,11 @@ Claude Channels (plugin:telegram)
 |----------|----------|---------|
 | `AgentRegistry` | TEP-62 (NFT Collection) | Factory that issues SBT identities for agents |
 | `AgentSBT` | TEP-85 (SBT) | Non-transferable identity token storing agent metadata |
+| `KyaGated` | Custom | Access-controlled vault — only KYA-verified agents can deposit |
+
+**Two registration modes:**
+- `register_self` (op 0x2) — **Permissionless**: agent's own wallet mints SBT. The transaction signature cryptographically proves wallet ownership. No admin needed.
+- `mint_agent` (op 0x1) — Admin-only: registry owner mints on behalf of agents.
 
 SBT on-chain metadata (TEP-64):
 - `name`, `description`, `image` — Agent profile
@@ -61,6 +67,8 @@ SBT on-chain metadata (TEP-64):
 - `reputation` — Trust score (default: 5000)
 
 Transfer is always rejected (exit code 413). Owner can destroy; authority can revoke.
+
+**KYA-Gated Contracts:** The `KyaGated` vault demonstrates on-chain access control — only agents that can pass TEP-85 `prove_ownership` (cryptographic SBT ownership proof) are allowed to deposit. This pattern can be applied to any DeFi protocol.
 
 ### TON MCP Server
 
@@ -95,7 +103,7 @@ cd agent-factory && bun install && cd ..
 npx blueprint build AgentRegistry
 npx blueprint build AgentSBT
 
-# Run tests (8 tests)
+# Run tests (14 tests)
 npx jest --verbose
 ```
 
@@ -145,7 +153,7 @@ Then message your bot on Telegram:
 - **Blockchain Data:** tonapi.io, TonCenter RPC
 - **Runtime:** Bun, TypeScript
 - **Wallet:** TON Wallet V5R1, `@ton/crypto`
-- **Testing:** Jest + `@ton/sandbox` (8 contract tests)
+- **Testing:** Jest + `@ton/sandbox` (14 contract tests)
 
 ## MCP Tools (7 total)
 
@@ -163,16 +171,17 @@ Then message your bot on Telegram:
 
 ```
 ├── contracts/              # FunC smart contracts
-│   ├── agent_registry.fc   # NFT Collection (TEP-62)
+│   ├── agent_registry.fc   # NFT Collection (TEP-62) + self-registration
 │   ├── agent_sbt.fc        # SBT Item (TEP-85)
+│   ├── kya_gated.fc        # Access-controlled vault (KYA-verified only)
 │   └── imports/stdlib.fc
 ├── wrappers/               # TypeScript contract wrappers
 ├── tests/                  # Jest contract tests
 ├── scripts/                # Deploy and mint scripts
-├── mcp-server/             # TON MCP Server (6 tools)
+├── mcp-server/             # TON MCP Server (7 tools)
 │   └── src/
 │       ├── index.ts        # MCP entry point
-│       ├── tools/          # balance, price, kya
+│       ├── tools/          # balance, price, kya, transfer
 │       └── ton/            # tonapi.io client
 ├── agent-factory/          # CLI provisioning tool
 │   └── src/
@@ -194,8 +203,11 @@ Then message your bot on Telegram:
 - **MCP-native** — AI accesses blockchain data through standardized tool protocol
 - **SBT > NFT for identity** — Non-transferable tokens are more faithful to KYA than ERC-8004's transferable ERC-721 approach
 - **On-chain metadata** — Agent data lives on the blockchain, not on IPFS/HTTPS that can go offline
+- **Cryptographic wallet binding** — Self-registration means TX signature proves wallet ownership
+- **KYA-gated contracts** — Smart contracts can gate access to verified agents via TEP-85 prove_ownership
 
 For a detailed comparison with Ethereum's ERC-8004 standard, see [docs/KYA_VS_ERC8004.md](./docs/KYA_VS_ERC8004.md).
+For the security and trust model, see [docs/SECURITY_MODEL.md](./docs/SECURITY_MODEL.md).
 
 ## Contributing
 

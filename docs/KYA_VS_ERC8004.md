@@ -19,15 +19,25 @@ It defines three on-chain registries:
 | **Chain** | Ethereum / EVM L2 | TON |
 | **Identity Token** | ERC-721 (**transferable**) | TEP-85 SBT (**non-transferable**) |
 | **Metadata Storage** | Off-chain (IPFS/HTTPS JSON) | **On-chain** (TEP-64 dictionary) |
-| **Registries** | 3 (Identity, Reputation, Validation) | 1 (Identity only, MVP) |
+| **Registries** | 3 (Identity, Reputation, Validation) | 1 (Identity + KYA-Gated access control) |
+| **Registration** | Admin or permissioned | **Permissionless self-registration** |
+| **Wallet Binding** | Not enforced | **Cryptographic (TX signature)** |
 | **Reputation** | Dedicated registry, dynamic updates | Fixed value in SBT (MVP: 5000) |
-| **Verification** | Generic validator hooks | `verify_agent` by Telegram Bot ID |
+| **Verification** | Generic validator hooks | `verify_agent` with wallet binding check |
+| **Access Control** | Not specified | **KYA-gated contracts (prove_ownership)** |
 | **AI Integration** | None (left to app layer) | **Built-in: Claude Channels + MCP Server** |
+| **TX Execution** | Not specified | **Built-in: send_ton with confirmation** |
 | **Provisioning** | Manual registration to each registry | **1-command full automation** |
 | **Telegram** | None | **Native** (Bot ID linked in SBT) |
 | **Target Use Case** | General-purpose (Agent-to-Agent coordination) | Telegram AI Agent infrastructure |
 
 ## Our Advantages
+
+### 0. Cryptographic Wallet Binding
+
+ERC-8004 does not enforce any relationship between the identity token and the agent's wallet. The identity is an ERC-721 token that can be held by any address.
+
+Our `register_self` operation makes the **transaction signature itself the proof of wallet ownership**. The caller's address automatically becomes the SBT owner — no trusted admin needed. Combined with TEP-85 `prove_ownership`, this creates a full cryptographic chain from wallet to identity to access control.
 
 ### 1. Non-Transferable Identity (SBT)
 
@@ -55,7 +65,19 @@ Our project ships a complete AI integration stack:
 - **Claude Channels** for Telegram message handling
 - The AI can query the KYA registry as a native tool call — no custom integration needed
 
-### 4. 1-Command Provisioning
+### 4. KYA-Gated Smart Contracts
+
+ERC-8004 does not specify how other contracts should check agent identity. Access control is left to the application layer.
+
+We ship `KyaGated` — a vault contract that only accepts deposits from agents who can pass TEP-85 `prove_ownership`. The flow:
+
+```
+Agent → SBT (prove_ownership) → Vault (ownership_proof) → deposit credited
+```
+
+This is a reusable pattern: any DeFi protocol can gate operations to KYA-verified agents by accepting `ownership_proof` messages.
+
+### 5. 1-Command Provisioning
 
 ERC-8004 is a *standard*, not a tool. Developers must manually deploy contracts and send transactions to each registry.
 
@@ -64,6 +86,12 @@ Agent Factory provisions everything in a single command:
 agent-factory create --token <BOT_TOKEN> --name "DeFi Agent"
 ```
 Bot validation → wallet generation → SBT minting → AI configuration — all automated.
+
+### 6. Transaction Execution
+
+ERC-8004 defines identity infrastructure only. Whether and how agents execute transactions is out of scope.
+
+Our MCP server includes `send_ton` — the agent can execute TON transfers with user confirmation. Combined with KYA identity, this means a verified agent with an accountable on-chain identity can perform financial operations.
 
 ## Where ERC-8004 is Ahead
 
@@ -83,9 +111,11 @@ Works on any EVM-compatible chain. Our implementation is TON-specific.
 
 ERC-8004 is a **general-purpose standard for the Ethereum ecosystem**. It defines interfaces but leaves the AI integration, messaging layer, and developer tooling to others.
 
-KYA on TON is a **working product specialized for TON × Telegram × Claude**. Rather than proposing a standard, we built the complete infrastructure: from smart contracts to AI tools to 1-command provisioning. The demo speaks for itself — mint an identity, talk to the agent on Telegram, and verify it on-chain.
+KYA on TON is a **working product specialized for TON × Telegram × Claude**. Rather than proposing a standard, we built the complete stack: cryptographic wallet binding, KYA-gated smart contracts, AI tool integration, transaction execution, and 1-command provisioning.
 
 They are complementary rather than competing: ERC-8004 standardizes the *what*, we demonstrate the *how*.
+
+For the detailed security and trust model, see [SECURITY_MODEL.md](./SECURITY_MODEL.md).
 
 ## References
 
