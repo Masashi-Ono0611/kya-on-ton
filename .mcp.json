@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "ton-agent": {
+      "command": "bun",
+      "args": ["run", "./mcp-server/src/index.ts"],
+      "env": {
+        "TON_API_BASE_URL": "https://testnet.tonapi.io",
+        "TONCENTER_ENDPOINT": "https://testnet.toncenter.com/api/v2/jsonRPC",
+        "AGENT_WALLET_ADDRESS": "<your-agent-wallet-address>",
+        "KYA_REGISTRY_ADDRESS": "<your-deployed-registry-address>"
+      }
+    }
+  }
+}

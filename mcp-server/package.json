@@ -1,0 +1,17 @@
+{
+  "name": "ton-agent-mcp",
+  "version": "0.1.0",
+  "description": "TON DeFi + KYA MCP Server for AI Agents",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch run src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@ton/core": "^0.63.0",
+    "@ton/ton": "^16.1.0",
+    "@ton/crypto": "^3.3.0"
+  }
+}

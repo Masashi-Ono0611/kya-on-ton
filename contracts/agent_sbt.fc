@@ -1,0 +1,196 @@
+#include "imports/stdlib.fc";
+
+;; ===== Agent SBT (TEP-85 Soul Bound Token) =====
+;; Non-transferable identity token for AI Agents
+;; Stores KYA (Know Your Agent) metadata on-chain
+
+;; Storage layout:
+;; index:uint64 collection_address:MsgAddr owner_address:MsgAddr content:^Cell
+;; authority_address:MsgAddr revoked_at:uint64
+
+(int, slice, slice, cell, slice, int) load_full_data() inline {
+    var ds = get_data().begin_parse();
+    return (
+        ds~load_uint(64),      ;; index
+        ds~load_msg_addr(),    ;; collection_address
+        ds~load_msg_addr(),    ;; owner_address
+        ds~load_ref(),         ;; content
+        ds~load_msg_addr(),    ;; authority_address
+        ds~load_uint(64)       ;; revoked_at
+    );
+}
+
+() store_full_data(int index, slice collection, slice owner, cell content, slice authority, int revoked_at) impure inline {
+    set_data(begin_cell()
+        .store_uint(index, 64)
+        .store_slice(collection)
+        .store_slice(owner)
+        .store_ref(content)
+        .store_slice(authority)
+        .store_uint(revoked_at, 64)
+    .end_cell());
+}
+
+;; ===== Op codes =====
+const int op::transfer = 0x5fcc3d14;
+const int op::get_static_data = 0x2fcb26a2;
+const int op::report_static_data = 0x8b771735;
+const int op::prove_ownership = 0x04ded148;
+const int op::ownership_proof = 0x0524c7ae;
+const int op::ownership_proof_bounced = 0xc18e86d2;
+const int op::request_owner = 0xd0c3bfea;
+const int op::owner_info = 0x0dd607e3;
+const int op::destroy = 0x1f04537a;
+const int op::revoke = 0x6f89f5e3;
+
+;; ===== Internal messages =====
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    if (flags & 1) { return (); } ;; bounced
+
+    slice sender_address = cs~load_msg_addr();
+
+    ;; Handle initialization from collection
+    var ds = get_data().begin_parse();
+    int index = ds~load_uint(64);
+    slice collection_address = ds~load_msg_addr();
+
+    if (ds.slice_bits() == 0) {
+        ;; Not initialized — accept init from collection
+        throw_unless(405, equal_slices(sender_address, collection_address));
+        ;; in_msg_body contains: owner_address + content_ref
+        slice owner = in_msg_body~load_msg_addr();
+        cell content = in_msg_body~load_ref();
+
+        ;; Authority = owner (can revoke)
+        store_full_data(index, collection_address, owner, content, owner, 0);
+        return ();
+    }
+
+    ;; Already initialized
+    if (in_msg_body.slice_empty?()) { return (); }
+
+    int op = in_msg_body~load_uint(32);
+    int query_id = in_msg_body~load_uint(64);
+
+    var (idx, collection, owner, content, authority, revoked_at) = load_full_data();
+
+    ;; ===== TRANSFER: Always reject (SBT) =====
+    if (op == op::transfer) {
+        throw(413); ;; SBT: transfer not allowed
+    }
+
+    ;; ===== GET STATIC DATA =====
+    if (op == op::get_static_data) {
+        var msg = begin_cell()
+            .store_uint(0x18, 6)
+            .store_slice(sender_address)
+            .store_coins(0)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+            .store_uint(op::report_static_data, 32)
+            .store_uint(query_id, 64)
+            .store_uint(idx, 256)
+            .store_slice(collection);
+        send_raw_message(msg.end_cell(), 64); ;; carry remaining value
+        return ();
+    }
+
+    ;; ===== PROVE OWNERSHIP (TEP-85) =====
+    if (op == op::prove_ownership) {
+        throw_unless(401, equal_slices(sender_address, owner));
+        slice dest = in_msg_body~load_msg_addr();
+        cell forward_payload = in_msg_body~load_ref();
+        int with_content = in_msg_body~load_uint(1);
+
+        var msg = begin_cell()
+            .store_uint(0x18, 6)
+            .store_slice(dest)
+            .store_coins(0)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+            .store_uint(op::ownership_proof, 32)
+            .store_uint(query_id, 64)
+            .store_uint(idx, 256)
+            .store_slice(owner)
+            .store_ref(forward_payload)
+            .store_uint(revoked_at, 64)
+            .store_uint(with_content, 1);
+
+        if (with_content) {
+            msg = msg.store_ref(content);
+        }
+
+        send_raw_message(msg.end_cell(), 64);
+        return ();
+    }
+
+    ;; ===== REQUEST OWNER (TEP-85) =====
+    if (op == op::request_owner) {
+        slice dest = in_msg_body~load_msg_addr();
+        cell forward_payload = in_msg_body~load_ref();
+        int with_content = in_msg_body~load_uint(1);
+
+        var msg = begin_cell()
+            .store_uint(0x18, 6)
+            .store_slice(dest)
+            .store_coins(0)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+            .store_uint(op::owner_info, 32)
+            .store_uint(query_id, 64)
+            .store_uint(idx, 256)
+            .store_slice(sender_address)
+            .store_slice(owner)
+            .store_ref(forward_payload)
+            .store_uint(revoked_at, 64)
+            .store_uint(with_content, 1);
+
+        if (with_content) {
+            msg = msg.store_ref(content);
+        }
+
+        send_raw_message(msg.end_cell(), 64);
+        return ();
+    }
+
+    ;; ===== DESTROY (TEP-85): owner can burn =====
+    if (op == op::destroy) {
+        throw_unless(401, equal_slices(sender_address, owner));
+
+        var msg = begin_cell()
+            .store_uint(0x18, 6)
+            .store_slice(owner)
+            .store_coins(0)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+            .store_uint(0xd53276db, 32) ;; op::excesses
+            .store_uint(query_id, 64);
+        send_raw_message(msg.end_cell(), 128); ;; send all remaining balance
+        return ();
+    }
+
+    ;; ===== REVOKE (TEP-85): authority can revoke =====
+    if (op == op::revoke) {
+        throw_unless(401, equal_slices(sender_address, authority));
+        store_full_data(idx, collection, owner, content, authority, now());
+        return ();
+    }
+
+    throw(0xffff); ;; unknown op
+}
+
+;; ===== Get methods =====
+
+(int, int, slice, slice, cell) get_nft_data() method_id {
+    var (idx, collection, owner, content, _, _) = load_full_data();
+    return (-1, idx, collection, owner, content); ;; init = true
+}
+
+slice get_authority_address() method_id {
+    var (_, _, _, _, authority, _) = load_full_data();
+    return authority;
+}
+
+int get_revoked_time() method_id {
+    var (_, _, _, _, _, revoked_at) = load_full_data();
+    return revoked_at;
+}

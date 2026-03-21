@@ -1,0 +1,20 @@
+node_modules/
+dist/
+build/
+.secrets/
+temp/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Lock files (subpackages)
+mcp-server/bun.lock
+agent-factory/bun.lock
