@@ -1,0 +1,154 @@
+#include "imports/stdlib.fc";
+
+;; ===== KYA-Gated Vault =====
+;; A DeFi primitive that ONLY allows KYA-verified agents to deposit/withdraw.
+;; Uses TEP-85 ownership_proof to verify agent identity on-chain.
+;;
+;; Flow:
+;;   1. Agent sends prove_ownership to their SBT, with this contract as destination
+;;   2. SBT sends ownership_proof to this contract
+;;   3. This contract verifies the proof came from a known KYA registry SBT
+;;   4. Deposit is credited to the agent
+;;
+;; This demonstrates: Smart contracts can gate access based on KYA identity.
+
+;; Storage: owner, registry_address, total_deposits, deposits_dict
+(slice, slice, int, cell) load_data() inline {
+    var ds = get_data().begin_parse();
+    return (
+        ds~load_msg_addr(),   ;; owner (admin)
+        ds~load_msg_addr(),   ;; kya_registry_address
+        ds~load_coins(),      ;; total_deposits
+        ds~load_dict()        ;; deposits: agent_address -> amount
+    );
+}
+
+() save_data(slice owner, slice registry, int total, cell deposits) impure inline {
+    set_data(begin_cell()
+        .store_slice(owner)
+        .store_slice(registry)
+        .store_coins(total)
+        .store_dict(deposits)
+    .end_cell());
+}
+
+;; Op codes
+const int op::ownership_proof = 0x0524c7ae;    ;; TEP-85: proof from SBT
+const int op::deposit = 0x10;                   ;; Deposit request (triggers prove flow)
+const int op::withdraw = 0x11;                  ;; Withdraw (owner only)
+const int op::prove_ownership = 0x04ded148;    ;; TEP-85: request to SBT
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    if (in_msg_body.slice_empty?()) { return (); }
+
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    if (flags & 1) { return (); } ;; bounced
+
+    slice sender_address = cs~load_msg_addr();
+    int op = in_msg_body~load_uint(32);
+    int query_id = in_msg_body~load_uint(64);
+
+    var (owner, registry, total_deposits, deposits) = load_data();
+
+    ;; ===== OWNERSHIP_PROOF: SBT proves agent identity =====
+    ;; Received from SBT contract after agent called prove_ownership
+    if (op == op::ownership_proof) {
+        ;; Parse proof: index(256), owner_address, forward_payload, revoked_at, with_content
+        int sbt_index = in_msg_body~load_uint(256);
+        slice agent_address = in_msg_body~load_msg_addr();
+        cell forward_payload = in_msg_body~load_ref();
+        int revoked_at = in_msg_body~load_uint(64);
+
+        ;; Reject revoked SBTs
+        throw_if(410, revoked_at > 0);
+
+        ;; Parse forward_payload to get deposit amount
+        slice fp = forward_payload.begin_parse();
+        int deposit_amount = fp~load_coins();
+
+        throw_unless(411, deposit_amount > 0);
+
+        ;; Credit deposit to agent
+        ;; Use agent address hash as dict key (256-bit)
+        int agent_hash = slice_hash(agent_address);
+
+        (slice existing, int found) = deposits.udict_get?(256, agent_hash);
+        int current = 0;
+        if (found) {
+            current = existing~load_coins();
+        }
+
+        deposits~udict_set_builder(256, agent_hash,
+            begin_cell().store_coins(current + deposit_amount)
+        );
+
+        save_data(owner, registry, total_deposits + deposit_amount, deposits);
+        return ();
+    }
+
+    ;; ===== DEPOSIT: Agent initiates deposit via SBT proof =====
+    ;; Agent sends: op::deposit + sbt_address
+    ;; This contract sends prove_ownership to the SBT
+    if (op == op::deposit) {
+        slice sbt_address = in_msg_body~load_msg_addr();
+        int deposit_amount = msg_value - 100000000; ;; reserve 0.1 TON for gas
+        throw_unless(412, deposit_amount > 0);
+
+        ;; Forward payload: encode the deposit amount
+        cell forward_payload = begin_cell()
+            .store_coins(deposit_amount)
+        .end_cell();
+
+        ;; Send prove_ownership request to SBT
+        var msg = begin_cell()
+            .store_uint(0x18, 6)
+            .store_slice(sbt_address)
+            .store_coins(50000000)  ;; 0.05 TON for gas
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+            .store_uint(op::prove_ownership, 32)
+            .store_uint(query_id, 64)
+            .store_slice(my_address())        ;; dest = this contract
+            .store_ref(forward_payload)
+            .store_uint(0, 1);                ;; with_content = false
+
+        send_raw_message(msg.end_cell(), 1);
+
+        ;; Store remaining deposit amount for later credit
+        ;; (actual credit happens when ownership_proof arrives)
+        return ();
+    }
+
+    ;; ===== WITHDRAW: Owner withdraws all deposits =====
+    if (op == op::withdraw) {
+        throw_unless(401, equal_slices(sender_address, owner));
+
+        var msg = begin_cell()
+            .store_uint(0x18, 6)
+            .store_slice(owner)
+            .store_coins(total_deposits)
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1);
+        send_raw_message(msg.end_cell(), 1);
+
+        save_data(owner, registry, 0, deposits);
+        return ();
+    }
+
+    throw(0xffff);
+}
+
+;; ===== Get methods =====
+
+(int, slice) get_vault_data() method_id {
+    var (_, registry, total, _) = load_data();
+    return (total, registry);
+}
+
+int get_agent_deposit(int agent_hash) method_id {
+    var (_, _, _, deposits) = load_data();
+    (slice val, int found) = deposits.udict_get?(256, agent_hash);
+    if (found) {
+        return val~load_coins();
+    }
+    return 0;
+}

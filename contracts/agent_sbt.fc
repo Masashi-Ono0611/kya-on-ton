@@ -104,11 +104,8 @@ const int op::revoke = 0x6f89f5e3;
         cell forward_payload = in_msg_body~load_ref();
         int with_content = in_msg_body~load_uint(1);
 
-        var msg = begin_cell()
-            .store_uint(0x18, 6)
-            .store_slice(dest)
-            .store_coins(0)
-            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+        ;; Build body as separate cell (too large for inline)
+        var body = begin_cell()
             .store_uint(op::ownership_proof, 32)
             .store_uint(query_id, 64)
             .store_uint(idx, 256)
@@ -118,8 +115,15 @@ const int op::revoke = 0x6f89f5e3;
             .store_uint(with_content, 1);
 
         if (with_content) {
-            msg = msg.store_ref(content);
+            body = body.store_ref(content);
         }
+
+        var msg = begin_cell()
+            .store_uint(0x18, 6)
+            .store_slice(dest)
+            .store_coins(0)
+            .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1) ;; body in ref
+            .store_ref(body.end_cell());
 
         send_raw_message(msg.end_cell(), 64);
         return ();
@@ -131,11 +135,7 @@ const int op::revoke = 0x6f89f5e3;
         cell forward_payload = in_msg_body~load_ref();
         int with_content = in_msg_body~load_uint(1);
 
-        var msg = begin_cell()
-            .store_uint(0x18, 6)
-            .store_slice(dest)
-            .store_coins(0)
-            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+        var body = begin_cell()
             .store_uint(op::owner_info, 32)
             .store_uint(query_id, 64)
             .store_uint(idx, 256)
@@ -146,8 +146,15 @@ const int op::revoke = 0x6f89f5e3;
             .store_uint(with_content, 1);
 
         if (with_content) {
-            msg = msg.store_ref(content);
+            body = body.store_ref(content);
         }
+
+        var msg = begin_cell()
+            .store_uint(0x18, 6)
+            .store_slice(dest)
+            .store_coins(0)
+            .store_uint(1, 1 + 4 + 4 + 64 + 32 + 1 + 1) ;; body in ref
+            .store_ref(body.end_cell());
 
         send_raw_message(msg.end_cell(), 64);
         return ();
