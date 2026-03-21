@@ -68,6 +68,28 @@ export class AgentSBT implements Contract {
         });
     }
 
+    // TEP-85: prove_ownership — owner sends this to SBT, SBT forwards ownership_proof to dest
+    async sendProveOwnership(
+        provider: ContractProvider,
+        via: Sender,
+        dest: Address,
+        forwardPayload: Cell,
+        withContent: boolean = false,
+        value: bigint = toNano('0.1'),
+    ) {
+        await provider.internal(via, {
+            value,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell()
+                .storeUint(0x04ded148, 32) // op::prove_ownership
+                .storeUint(0, 64)          // query_id
+                .storeAddress(dest)
+                .storeRef(forwardPayload)
+                .storeUint(withContent ? 1 : 0, 1)
+                .endCell(),
+        });
+    }
+
     async sendRevoke(provider: ContractProvider, via: Sender) {
         await provider.internal(via, {
             value: toNano('0.02'),
