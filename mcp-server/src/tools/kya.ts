@@ -1,15 +1,31 @@
 import { Address, TonClient, Cell, Dictionary } from '@ton/ton';
 import { TONCENTER_ENDPOINT, TONCENTER_API_KEY, KYA_REGISTRY_ADDRESS } from '../ton/constants.js';
-import { fetchTonApi } from '../ton/client.js';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+// TON Society SBTs exist on mainnet only — always query mainnet for these
+const MAINNET_TONAPI = 'https://tonapi.io';
 
 // Known TON Society SBT collection addresses (mainnet)
 const TON_SOCIETY_COLLECTIONS = [
   '0:f6eb890eb9055611b72013bca8e3aff0897983e79fbd1bb59aff1e3ab03c6519', // TON Society OG Badge
 ];
 
-// Check if a wallet holds any TON Society SBTs
+// Fetch from mainnet tonapi.io (separate from KYA registry which may be on testnet)
+async function fetchMainnetApi<T>(endpoint: string, params: Record<string, string> = {}): Promise<T> {
+  const url = new URL(`${MAINNET_TONAPI}${endpoint}`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value) url.searchParams.append(key, value);
+  }
+  const response = await fetch(url.toString(), {
+    headers: { 'Accept': 'application/json' },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`TonAPI ${response.status}`);
+  return response.json() as Promise<T>;
+}
+
+// Check if a wallet holds any TON Society SBTs (always checks mainnet)
 async function checkTonSocietySBTs(walletAddress: string): Promise<{
   hasTonSocietySBT: boolean;
   badges: string[];
@@ -18,10 +34,9 @@ async function checkTonSocietySBTs(walletAddress: string): Promise<{
   const badges: string[] = [];
 
   try {
-    // Check each known TON Society collection via collection filter
     for (const collAddr of TON_SOCIETY_COLLECTIONS) {
       try {
-        const data = await fetchTonApi<{ nft_items: Array<{
+        const data = await fetchMainnetApi<{ nft_items: Array<{
           collection?: { address: string; name?: string };
           metadata?: { name?: string };
         }> }>(`/v2/accounts/${encodeURIComponent(walletAddress)}/nfts`, {
