@@ -7,4 +7,6 @@ export const AGENT_WALLET_ADDRESS = process.env.AGENT_WALLET_ADDRESS || '';
 export const TONCENTER_ENDPOINT = process.env.TONCENTER_ENDPOINT || 'https://testnet.toncenter.com/api/v2/jsonRPC';
 export const TONCENTER_API_KEY = process.env.TONCENTER_API_KEY || '';
 
+export const AGENT_MNEMONIC_PATH = process.env.AGENT_MNEMONIC_PATH || '';
+
 export const CACHE_TTL_MS = 10_000; // 10 seconds
