@@ -15,41 +15,30 @@ async function checkTonSocietySBTs(walletAddress: string): Promise<{
   badges: string[];
   totalSBTs: number;
 }> {
+  const badges: string[] = [];
+
   try {
-    const data = await fetchTonApi<{ nft_items: Array<{
-      collection?: { address: string; name?: string };
-      metadata?: { name?: string };
-    }> }>(`/v2/accounts/${encodeURIComponent(walletAddress)}/nfts`, {
-      collection: TON_SOCIETY_COLLECTIONS[0],
-    });
+    // Check each known TON Society collection via collection filter
+    for (const collAddr of TON_SOCIETY_COLLECTIONS) {
+      try {
+        const data = await fetchTonApi<{ nft_items: Array<{
+          collection?: { address: string; name?: string };
+          metadata?: { name?: string };
+        }> }>(`/v2/accounts/${encodeURIComponent(walletAddress)}/nfts`, {
+          collection: collAddr,
+        });
 
-    const badges: string[] = [];
-    for (const item of data.nft_items || []) {
-      const name = item.metadata?.name || item.collection?.name || 'Unknown Badge';
-      badges.push(name);
-    }
-
-    // Also check for any SBTs from TON Society related collections
-    const allNfts = await fetchTonApi<{ nft_items: Array<{
-      collection?: { address: string; name?: string };
-      metadata?: { name?: string };
-    }> }>(`/v2/accounts/${encodeURIComponent(walletAddress)}/nfts`);
-
-    let tonSocietyCount = 0;
-    for (const item of allNfts.nft_items || []) {
-      const collName = item.collection?.name || '';
-      if (collName.toLowerCase().includes('ton society') || collName.toLowerCase().includes('humancode')) {
-        tonSocietyCount++;
-        if (!badges.includes(item.metadata?.name || collName)) {
-          badges.push(item.metadata?.name || collName);
+        for (const item of data.nft_items || []) {
+          const name = item.metadata?.name || item.collection?.name || 'TON Society Badge';
+          badges.push(name);
         }
-      }
+      } catch { /* collection check failed, continue */ }
     }
 
     return {
-      hasTonSocietySBT: badges.length > 0 || tonSocietyCount > 0,
+      hasTonSocietySBT: badges.length > 0,
       badges,
-      totalSBTs: tonSocietyCount || badges.length,
+      totalSBTs: badges.length,
     };
   } catch {
     return { hasTonSocietySBT: false, badges: [], totalSBTs: 0 };
