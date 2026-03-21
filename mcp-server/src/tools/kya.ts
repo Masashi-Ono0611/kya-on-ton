@@ -1,7 +1,73 @@
 import { Address, TonClient, Cell, Dictionary } from '@ton/ton';
 import { TONCENTER_ENDPOINT, TONCENTER_API_KEY, KYA_REGISTRY_ADDRESS } from '../ton/constants.js';
+import { fetchTonApi } from '../ton/client.js';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+// Known TON Society SBT collection addresses (mainnet)
+const TON_SOCIETY_COLLECTIONS = [
+  '0:f6eb890eb9055611b72013bca8e3aff0897983e79fbd1bb59aff1e3ab03c6519', // TON Society OG Badge
+];
+
+// Check if a wallet holds any TON Society SBTs
+async function checkTonSocietySBTs(walletAddress: string): Promise<{
+  hasTonSocietySBT: boolean;
+  badges: string[];
+  totalSBTs: number;
+}> {
+  try {
+    const data = await fetchTonApi<{ nft_items: Array<{
+      collection?: { address: string; name?: string };
+      metadata?: { name?: string };
+    }> }>(`/v2/accounts/${encodeURIComponent(walletAddress)}/nfts`, {
+      collection: TON_SOCIETY_COLLECTIONS[0],
+    });
+
+    const badges: string[] = [];
+    for (const item of data.nft_items || []) {
+      const name = item.metadata?.name || item.collection?.name || 'Unknown Badge';
+      badges.push(name);
+    }
+
+    // Also check for any SBTs from TON Society related collections
+    const allNfts = await fetchTonApi<{ nft_items: Array<{
+      collection?: { address: string; name?: string };
+      metadata?: { name?: string };
+    }> }>(`/v2/accounts/${encodeURIComponent(walletAddress)}/nfts`);
+
+    let tonSocietyCount = 0;
+    for (const item of allNfts.nft_items || []) {
+      const collName = item.collection?.name || '';
+      if (collName.toLowerCase().includes('ton society') || collName.toLowerCase().includes('humancode')) {
+        tonSocietyCount++;
+        if (!badges.includes(item.metadata?.name || collName)) {
+          badges.push(item.metadata?.name || collName);
+        }
+      }
+    }
+
+    return {
+      hasTonSocietySBT: badges.length > 0 || tonSocietyCount > 0,
+      badges,
+      totalSBTs: tonSocietyCount || badges.length,
+    };
+  } catch {
+    return { hasTonSocietySBT: false, badges: [], totalSBTs: 0 };
+  }
+}
+
+function computeTrustLevel(opts: {
+  registered: boolean;
+  walletBound: boolean;
+  hasTonSocietySBT: boolean;
+  revoked: boolean;
+}): { level: number; label: string } {
+  if (opts.revoked) return { level: 0, label: 'REVOKED' };
+  if (!opts.registered) return { level: 0, label: 'UNREGISTERED' };
+  if (opts.hasTonSocietySBT && opts.walletBound) return { level: 3, label: 'HUMAN_VERIFIED' };
+  if (opts.walletBound) return { level: 2, label: 'WALLET_BOUND' };
+  return { level: 1, label: 'REGISTERED' };
+}
 
 let _client: TonClient | null = null;
 
@@ -147,6 +213,16 @@ export async function verifyAgent(telegramBotId: string): Promise<string> {
           const walletBound = declaredWallet.length > 0 &&
             (onChainOwner.includes(declaredWallet.slice(2, 20)) || declaredWallet.includes(onChainOwner.slice(2, 20)));
 
+          // Check TON Society SBT holdings for human verification
+          const tonSociety = await checkTonSocietySBTs(onChainOwner);
+
+          const trust = computeTrustLevel({
+            registered: true,
+            walletBound,
+            hasTonSocietySBT: tonSociety.hasTonSocietySBT,
+            revoked: revokedAt > 0,
+          });
+
           return JSON.stringify({
             verified: revokedAt === 0,
             agent_id: i,
@@ -154,9 +230,10 @@ export async function verifyAgent(telegramBotId: string): Promise<string> {
             owner: onChainOwner,
             revoked: revokedAt > 0,
             wallet_cryptographically_bound: walletBound,
-            binding_proof: walletBound
-              ? 'SBT owner matches wallet — the mint transaction signature cryptographically proves wallet ownership'
-              : 'WARNING: SBT owner does not match declared wallet_address — binding is not proven',
+            trust_level: trust.level,
+            trust_label: trust.label,
+            creator_human_verified: tonSociety.hasTonSocietySBT,
+            ton_society_badges: tonSociety.badges,
             profile: {
               name: content['name'] || null,
               description: content['description'] || null,

@@ -91,15 +91,32 @@ If the SBT owner does not match the declared `wallet_address` in metadata:
 
 ## Trust Levels
 
-| Level | What's proven | Implementation |
-|-------|--------------|----------------|
-| **Level 1** | Agent registered in KYA registry | `register_self` or `mint_agent` |
-| **Level 2** | Wallet ownership is cryptographic | `register_self` (TX signature) |
-| **Level 3** | Telegram Bot ownership proven | Not yet (needs oracle) |
-| **Level 4** | Third-party validation | Not yet (needs validation registry) |
-| **Level 5** | TEE-based full binding | Not yet (needs trusted execution) |
+| Level | Label | What's proven | Implementation |
+|-------|-------|--------------|----------------|
+| **Level 0** | `REVOKED` / `UNREGISTERED` | Nothing — agent not found or revoked | — |
+| **Level 1** | `REGISTERED` | Agent registered in KYA registry | `register_self` or `mint_agent` |
+| **Level 2** | `WALLET_BOUND` | Wallet ownership is cryptographic | `register_self` (TX signature) |
+| **Level 3** | `HUMAN_VERIFIED` | Creator holds TON Society SBT (human identity) | TON Society SBT check via tonapi.io |
+| **Level 4** | — | Telegram Bot ownership proven | Not yet (needs oracle) |
+| **Level 5** | — | TEE-based full binding | Not yet (needs trusted execution) |
 
-Current implementation covers **Level 1-2**. The KYA-gated vault (`prove_ownership` flow) provides Level 2 guarantees for contract-level access control.
+Current implementation covers **Level 1-3**.
+
+### Level 3: TON Society Integration
+
+`verify_agent` checks whether the SBT owner's wallet holds any TON Society SBTs (e.g., OG Badge, HumanCode Proof of Personhood). If found, the agent's trust level is elevated to `HUMAN_VERIFIED`.
+
+This bridges **human KYC (TON ID) → agent KYA**: a verified human created this agent.
+
+```
+TON Society (human identity) → TON ID SBT badges
+        ↓
+Agent's wallet holds TON Society SBTs
+        ↓
+verify_agent reports trust_level: 3, creator_human_verified: true
+        ↓
+KyaGated contracts can require Level 3 agents only
+```
 
 ## Comparison with ERC-8004
 
