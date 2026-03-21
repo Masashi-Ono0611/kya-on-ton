@@ -97,6 +97,23 @@ export class AgentRegistry implements Contract {
         });
     }
 
+    // Permissionless self-registration: caller's wallet becomes SBT owner
+    // The TX signature cryptographically proves wallet ownership
+    async sendRegisterSelf(provider: ContractProvider, via: Sender, agentContent: Cell) {
+        const sbtAmount = toNano('0.05');
+        await provider.internal(via, {
+            value: sbtAmount + toNano('0.1'), // SBT storage + gas
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            body: beginCell()
+                .storeUint(2, 32)              // op::register_self
+                .storeUint(0, 64)              // query_id
+                .storeCoins(sbtAmount)         // amount forwarded to SBT
+                .storeRef(agentContent)        // agent metadata
+                .endCell(),
+        });
+    }
+
+    // Admin-only mint (original, for backward compatibility)
     async sendMintAgent(provider: ContractProvider, via: Sender, params: AgentMintParams) {
         await provider.internal(via, {
             value: params.amount + toNano('0.05'), // extra for gas

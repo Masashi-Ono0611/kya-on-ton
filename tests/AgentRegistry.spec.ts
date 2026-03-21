@@ -276,4 +276,37 @@ describe('AgentRegistry', () => {
         expect(data0.owner.equals(owner1.address)).toBe(true);
         expect(data1.owner.equals(owner2.address)).toBe(true);
     });
+
+    it('should allow permissionless self-registration (wallet proof)', async () => {
+        const agent = await blockchain.treasury('self-registering-agent');
+
+        const agentContent = buildAgentContentCell({
+            name: 'Self-Registered Agent',
+            description: 'Registered by own wallet — cryptographic proof',
+            telegramBotId: '777',
+            walletAddress: agent.address.toString(),
+            capabilities: 'balance,price',
+        });
+
+        const result = await registry.sendRegisterSelf(agent.getSender(), agentContent);
+
+        expect(result.transactions).toHaveTransaction({
+            from: agent.address,
+            to: registry.address,
+            success: true,
+        });
+
+        // Verify next_item_index incremented
+        const data = await registry.getCollectionData();
+        expect(data.nextItemIndex).toBe(1);
+
+        // Verify SBT owner IS the agent's wallet (cryptographic binding)
+        const sbtAddress = await registry.getNftAddressByIndex(0);
+        const sbt = blockchain.openContract(AgentSBT.createFromAddress(sbtAddress));
+        const nftData = await sbt.getNftData();
+
+        expect(nftData.init).toBe(true);
+        // KEY: SBT owner == agent's wallet address (cryptographic proof)
+        expect(nftData.owner.equals(agent.address)).toBe(true);
+    });
 });

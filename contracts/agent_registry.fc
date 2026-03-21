@@ -98,6 +98,21 @@ slice calculate_nft_item_address(int wc, cell state_init) inline {
         return ();
     }
 
+    ;; op::register_self = 0x2
+    ;; Permissionless self-registration: caller becomes SBT owner
+    ;; This provides cryptographic wallet proof — the sender's signature
+    ;; on this transaction proves they control the wallet address.
+    if (op == 2) {
+        int amount = in_msg_body~load_coins();
+        cell agent_content = in_msg_body~load_ref();
+
+        ;; sender_address IS the agent owner — cryptographic proof via TX signature
+        deploy_agent_sbt(next_item_index, agent_sbt_code, amount, agent_content, sender_address);
+
+        save_data(owner_address, next_item_index + 1, content, agent_sbt_code);
+        return ();
+    }
+
     ;; op::change_owner = 0x3
     if (op == 3) {
         throw_unless(401, equal_slices(sender_address, owner_address));

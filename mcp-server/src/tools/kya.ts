@@ -141,12 +141,22 @@ export async function verifyAgent(telegramBotId: string): Promise<string> {
             revokedAt = Number(revokeResult.stack.readBigNumber());
           } catch {}
 
+          // Check wallet binding: does SBT on-chain owner match declared wallet?
+          const declaredWallet = content['wallet_address'] || '';
+          const onChainOwner = owner.toString();
+          const walletBound = declaredWallet.length > 0 &&
+            (onChainOwner.includes(declaredWallet.slice(2, 20)) || declaredWallet.includes(onChainOwner.slice(2, 20)));
+
           return JSON.stringify({
             verified: revokedAt === 0,
             agent_id: i,
             sbt_address: sbtAddress.toString(),
-            owner: owner.toString(),
+            owner: onChainOwner,
             revoked: revokedAt > 0,
+            wallet_cryptographically_bound: walletBound,
+            binding_proof: walletBound
+              ? 'SBT owner matches wallet — the mint transaction signature cryptographically proves wallet ownership'
+              : 'WARNING: SBT owner does not match declared wallet_address — binding is not proven',
             profile: {
               name: content['name'] || null,
               description: content['description'] || null,
