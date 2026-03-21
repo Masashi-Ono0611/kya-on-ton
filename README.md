@@ -36,7 +36,8 @@ Claude Channels (plugin:telegram)
     │   ├── get_token_price      — Real-time price data
     │   ├── estimate_swap        — DEX swap estimation
     │   ├── get_agent_profile    — KYA profile from SBT
-    │   └── verify_agent         — On-chain agent verification
+    │   ├── verify_agent         — On-chain agent verification
+    │   └── send_ton             — Execute TON transfer (with confirmation)
     │
     └── KYA Registry (TON Testnet)
         ├── AgentRegistry.fc     — TEP-62 NFT Collection
@@ -145,6 +146,18 @@ Then message your bot on Telegram:
 - **Runtime:** Bun, TypeScript
 - **Wallet:** TON Wallet V5R1, `@ton/crypto`
 - **Testing:** Jest + `@ton/sandbox` (8 contract tests)
+
+## MCP Tools (7 total)
+
+| Tool | Type | Description |
+|------|------|-------------|
+| `get_ton_balance` | Read | Wallet TON balance |
+| `get_jetton_balances` | Read | All token holdings |
+| `get_token_price` | Read | Real-time token price + 24h change |
+| `estimate_swap` | Read | DEX swap output estimation |
+| `get_agent_profile` | Read | KYA profile from on-chain SBT |
+| `verify_agent` | Read | Verify agent by Telegram Bot ID |
+| `send_ton` | **Write** | Execute TON transfer (max 1 TON, requires user confirmation) |
 
 ## Project Structure
 

@@ -8,6 +8,7 @@ import {
 import { getTonBalance, getJettonBalances } from './tools/balance.js';
 import { getTokenPrice, estimateSwap } from './tools/price.js';
 import { getAgentProfile, verifyAgent } from './tools/kya.js';
+import { sendTon } from './tools/transfer.js';
 
 const server = new Server(
   { name: 'ton-agent-mcp', version: '0.1.0' },
@@ -84,6 +85,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['telegram_bot_id'],
       },
     },
+    {
+      name: 'send_ton',
+      description: 'Send TON from the agent wallet to a destination address. Requires explicit user confirmation before calling. Max 1 TON per tx (testnet safety).',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          to: { type: 'string', description: 'Destination TON wallet address' },
+          amount: { type: 'string', description: 'Amount of TON to send (max 1.0)' },
+          comment: { type: 'string', description: 'Optional transaction comment' },
+        },
+        required: ['to', 'amount'],
+      },
+    },
   ],
 }));
 
@@ -111,6 +125,9 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         break;
       case 'verify_agent':
         result = await verifyAgent(args.telegram_bot_id);
+        break;
+      case 'send_ton':
+        result = await sendTon(args.to, args.amount, args.comment);
         break;
       default:
         result = JSON.stringify({ error: `Unknown tool: ${req.params.name}` });
