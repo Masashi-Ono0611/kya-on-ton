@@ -1,7 +1,7 @@
 {
   "name": "identity-ai-hackathon",
   "version": "0.1.0",
-  "description": "Agent Factory + KYA on TON — AI Agent Identity Infrastructure",
+  "description": "Agent Factory + KYA on TON \u2014 AI Agent Identity Infrastructure",
   "private": true,
   "scripts": {
     "start": "blueprint run",
@@ -26,6 +26,8 @@
     "@ton/tolk-js": "^1.2.0"
   },
   "overrides": {
-    "protobufjs": "^7.5.5"
+    "protobufjs": "^7.5.5",
+    "brace-expansion": ">=2.1.6",
+    "fast-uri": ">=3.1.7"
   }
 }
